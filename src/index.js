@@ -3,6 +3,7 @@ import {
     GatewayIntentBits,
     Partials,
     SlashCommandBuilder,
+    PermissionFlagsBits,
     REST,
     Routes,
   } from 'discord.js';
@@ -36,36 +37,42 @@ import {
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.MessageContent,   // remember to enable in the portal
+      GatewayIntentBits.MessageContent,   // enable in Developer Portal
     ],
     partials: [Partials.Channel],
   });
   
   /* ---------- Slash-command schema ---------- */
   const slashCommands = [
+    /* ----- Admin-only commands ----- */
     new SlashCommandBuilder()
       .setName('adddomain')
       .setDescription('Add a domain to the monitored list')
       .addStringOption(o =>
-        o.setName('domain').setDescription('example.com').setRequired(true)
-      ),
+        o.setName('domain').setDescription('example.com').setRequired(true))
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
   
     new SlashCommandBuilder()
       .setName('removedomain')
       .setDescription('Remove a domain from the monitored list')
       .addStringOption(o =>
-        o.setName('domain').setDescription('example.com').setRequired(true)
-      ),
+        o.setName('domain').setDescription('example.com').setRequired(true))
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
   
     new SlashCommandBuilder()
       .setName('listdomains')
-      .setDescription('Show all monitored domains'),
+      .setDescription('Show all monitored domains')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
+  
+    /* ----- Public command ----- */
     new SlashCommandBuilder()
       .setName('archive')
       .setDescription('Return the prefixed version of any URL')
       .addStringOption(o =>
-        o.setName('url').setDescription('Full URL to archive').setRequired(true)
-      ),
+        o.setName('url').setDescription('Full URL to archive').setRequired(true)),
   ].map(cmd => cmd.toJSON());
   /* ------------------------------------------ */
   
@@ -84,7 +91,14 @@ import {
     if (!interaction.isChatInputCommand()) return;
   
     const cmd = interaction.commandName;
+    const isAdmin = interaction.memberPermissions.has(PermissionFlagsBits.Administrator);
   
+    /* ---- Admin-only guards ---- */
+    if ((cmd === 'adddomain' || cmd === 'removedomain' || cmd === 'listdomains') && !isAdmin) {
+      return interaction.reply({ content: '⛔ You need the **Administrator** permission to use this command.', ephemeral: true });
+    }
+  
+    /* ---- /adddomain ---- */
     if (cmd === 'adddomain') {
       const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
       if (monitoredDomains.includes(arg))
@@ -95,6 +109,7 @@ import {
       return interaction.reply({ content: `✅ Added **${arg}**`, ephemeral: true });
     }
   
+    /* ---- /removedomain ---- */
     if (cmd === 'removedomain') {
       const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
       if (!monitoredDomains.includes(arg))
@@ -105,21 +120,19 @@ import {
       return interaction.reply({ content: `🗑️ Removed **${arg}**`, ephemeral: true });
     }
   
+    /* ---- /listdomains ---- */
     if (cmd === 'listdomains') {
       const list = monitoredDomains.length ? monitoredDomains.join(', ') : '_(none yet)_';
       return interaction.reply({ content: `📋 **Monitored domains:** ${list}`, ephemeral: true });
     }
   
-    /* ---- /archive (always responds) ---- */
+    /* ---- /archive (public) ---- */
     if (cmd === 'archive') {
       const raw = interaction.options.getString('url', true);
-      try {
-        new URL(raw); // just to validate; throws if invalid
-      } catch {
-        return interaction.reply({ content: '❌ Invalid URL.', ephemeral: true });
-      }
+      try { new URL(raw); }  // validate
+      catch { return interaction.reply({ content: '❌ Invalid URL.', ephemeral: true }); }
   
-      return interaction.reply({ content: `${PREFIX}${raw}` }); // public reply
+      return interaction.reply({ content: `${PREFIX}${raw}` });
     }
   });
   /* ----------------------------------------- */
@@ -135,9 +148,7 @@ import {
       try {
         const host = new URL(raw).hostname.replace(/^www\./, '');
         return monitoredDomains.includes(host);
-      } catch {
-        return false;
-      }
+      } catch { return false; }
     });
     if (matches.length === 0) return;
   
