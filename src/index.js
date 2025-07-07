@@ -1,4 +1,4 @@
-// index.js – Discord.js v14 with detailed logging (ESM) | warnings fixed
+// index.js – Discord.js v14 | debug logger + flexible domain matching (www & case‑insensitive)
 import {
   Client,
   GatewayIntentBits,
@@ -7,7 +7,7 @@ import {
   PermissionFlagsBits,
   REST,
   Routes,
-  MessageFlags,            // NEW: for proper ephemeral replies
+  MessageFlags,
 } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
@@ -60,7 +60,11 @@ function saveDomains(list) {
 let monitoredDomains = loadDomains();
 /* ------------------------------------------- */
 
+/* ----------- Utilities --------------------- */
+const normalizeHost = (host) => host.toLowerCase().replace(/^www\./, '');
+
 const urlRegex = /https?:\/\/[^\s<]+/gi;
+/* ------------------------------------------- */
 
 const client = new Client({
   intents: [
@@ -71,6 +75,15 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
+/* ---- DEBUG: log every message if env flag set ---- */
+if (process.env.DEBUG_MESSAGES === 'true') {
+  client.on('messageCreate', m => {
+    const where = m.guild ? `#${m.channel?.name}` : 'DM';
+    log(`[DEBUG] ${where} <${m.author.tag}>:`, m.content);
+  });
+}
+/* -------------------------------------------------- */
+
 /* ------------- Slash-command schema -------- */
 const slashCommands = [
   new SlashCommandBuilder()
@@ -79,20 +92,17 @@ const slashCommands = [
     .addStringOption(o => o.setName('domain').setDescription('example.com').setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
-
   new SlashCommandBuilder()
     .setName('removedomain')
     .setDescription('Remove a domain from the monitored list')
     .addStringOption(o => o.setName('domain').setDescription('example.com').setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
-
   new SlashCommandBuilder()
     .setName('listdomains')
     .setDescription('Show all monitored domains')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
-
   new SlashCommandBuilder()
     .setName('archive')
     .setDescription('Return the prefixed version of any URL')
@@ -119,36 +129,26 @@ client.on('interactionCreate', async interaction => {
   const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 
   if (['adddomain', 'removedomain', 'listdomains'].includes(cmd) && !isAdmin) {
-    log(`Denied ${cmd} for non-admin ${interaction.user.tag}`);
     return interaction.reply(eph('⛔ You need the **Administrator** permission to use this command.'));
   }
 
   try {
     if (cmd === 'adddomain') {
-      const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
-      if (monitoredDomains.includes(arg)) {
-        return interaction.reply(eph(`🔔 **${arg}** is already monitored.`));
-      }
-      monitoredDomains.push(arg);
-      saveDomains(monitoredDomains);
+      const arg = normalizeHost(interaction.options.getString('domain', true));
+      if (monitoredDomains.includes(arg)) return interaction.reply(eph(`🔔 **${arg}** is already monitored.`));
+      monitoredDomains.push(arg); saveDomains(monitoredDomains);
       return interaction.reply(eph(`✅ Added **${arg}**`));
     }
-
     if (cmd === 'removedomain') {
-      const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
-      if (!monitoredDomains.includes(arg)) {
-        return interaction.reply(eph(`⚠️ **${arg}** wasn’t on the list.`));
-      }
-      monitoredDomains = monitoredDomains.filter(d => d !== arg);
-      saveDomains(monitoredDomains);
+      const arg = normalizeHost(interaction.options.getString('domain', true));
+      if (!monitoredDomains.includes(arg)) return interaction.reply(eph(`⚠️ **${arg}** wasn’t on the list.`));
+      monitoredDomains = monitoredDomains.filter(d => d !== arg); saveDomains(monitoredDomains);
       return interaction.reply(eph(`🗑️ Removed **${arg}**`));
     }
-
     if (cmd === 'listdomains') {
       const list = monitoredDomains.length ? monitoredDomains.join(', ') : '_(none yet)_';
       return interaction.reply(eph(`📋 **Monitored domains:** ${list}`));
     }
-
     if (cmd === 'archive') {
       const raw = interaction.options.getString('url', true);
       try { new URL(raw); } catch { return interaction.reply(eph('❌ Invalid URL.')); }
@@ -166,13 +166,13 @@ client.on('messageCreate', async message => {
   if (message.author.bot || !message.content) return;
   const urls = message.content.match(urlRegex);
   if (!urls) return;
-
   const matches = urls.filter(raw => {
-    try { return monitoredDomains.includes(new URL(raw).hostname.replace(/^www\./, '')); }
-    catch { return false; }
+    try {
+      const host = normalizeHost(new URL(raw).hostname);
+      return monitoredDomains.includes(host);
+    } catch { return false; }
   });
   if (matches.length === 0) return;
-
   const response = matches.map(u => `${PREFIX}${u}`).join('\n');
   await message.channel.send({ content: response, reply: { messageReference: message.id } });
 });
