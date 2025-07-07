@@ -1,4 +1,4 @@
-// index.js – Discord.js v14 | debug logger + flexible domain matching (www & case‑insensitive)
+// index.js – Discord.js v14 | debug logger + flexible domain matching (www & case‑insensitive + sub‑domains)
 import {
   Client,
   GatewayIntentBits,
@@ -62,6 +62,14 @@ let monitoredDomains = loadDomains();
 
 /* ----------- Utilities --------------------- */
 const normalizeHost = (host) => host.toLowerCase().replace(/^www\./, '');
+
+/**
+ * Return true if a host exactly matches or is a sub‑domain of any monitored domain.
+ */
+const isMonitored = (host) => {
+  const h = normalizeHost(host);
+  return monitoredDomains.some(d => h === d || h.endsWith(`.${d}`));
+};
 
 const urlRegex = /https?:\/\/[^\s<]+/gi;
 /* ------------------------------------------- */
@@ -164,15 +172,21 @@ client.on('interactionCreate', async interaction => {
 /* -------- Automatic link watcher ----------- */
 client.on('messageCreate', async message => {
   if (message.author.bot || !message.content) return;
+
+  // Pull every URL out of the message.
   const urls = message.content.match(urlRegex);
   if (!urls) return;
+
+  // Find all URLs whose host is monitored or a sub‑domain of one.
   const matches = urls.filter(raw => {
     try {
-      const host = normalizeHost(new URL(raw).hostname);
-      return monitoredDomains.includes(host);
+      const host = new URL(raw).hostname;
+      return isMonitored(host);
     } catch { return false; }
   });
+
   if (matches.length === 0) return;
+
   const response = matches.map(u => `${PREFIX}${u}`).join('\n');
   await message.channel.send({ content: response, reply: { messageReference: message.id } });
 });
