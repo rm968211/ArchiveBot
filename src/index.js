@@ -1,4 +1,4 @@
-// index.js – Discord.js v14 with detailed logging (ESM)
+// index.js – Discord.js v14 with detailed logging (ESM) | warnings fixed
 import {
   Client,
   GatewayIntentBits,
@@ -7,6 +7,7 @@ import {
   PermissionFlagsBits,
   REST,
   Routes,
+  MessageFlags,            // NEW: for proper ephemeral replies
 } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
@@ -18,7 +19,7 @@ const log = (...args) => console.log(`[${new Date().toISOString()}]`, ...args);
 const err = (...args) => console.error(`[${new Date().toISOString()}]`, ...args);
 
 /* -------------- USER SETTINGS -------------- */
-const PREFIX = 'http://archive.ph/newest/'; // prefix to prepend
+const PREFIX = 'http://archive.ph/newest/';
 /* ------------------------------------------- */
 
 /* ---------- Domain storage in /data -------- */
@@ -75,18 +76,14 @@ const slashCommands = [
   new SlashCommandBuilder()
     .setName('adddomain')
     .setDescription('Add a domain to the monitored list')
-    .addStringOption(o =>
-      o.setName('domain').setDescription('example.com').setRequired(true)
-    )
+    .addStringOption(o => o.setName('domain').setDescription('example.com').setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
 
   new SlashCommandBuilder()
     .setName('removedomain')
     .setDescription('Remove a domain from the monitored list')
-    .addStringOption(o =>
-      o.setName('domain').setDescription('example.com').setRequired(true)
-    )
+    .addStringOption(o => o.setName('domain').setDescription('example.com').setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
 
@@ -99,73 +96,67 @@ const slashCommands = [
   new SlashCommandBuilder()
     .setName('archive')
     .setDescription('Return the prefixed version of any URL')
-    .addStringOption(o =>
-      o.setName('url').setDescription('Full URL to archive').setRequired(true)
-    ),
+    .addStringOption(o => o.setName('url').setDescription('Full URL to archive').setRequired(true)),
 ].map(cmd => cmd.toJSON());
 /* ------------------------------------------- */
 
 client.once('ready', async () => {
   log(`Logged in as ${client.user.tag}`);
-
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  await rest.put(Routes.applicationCommands(client.application.id), {
-    body: slashCommands,
-  });
+  await rest.put(Routes.applicationCommands(client.application.id), { body: slashCommands });
   log('Slash commands registered.');
 });
 
-/* --------- Slash‑command logic ------------- */
+/* --------- Utility for ephemeral replies --- */
+const eph = (content) => ({ content, flags: MessageFlags.Ephemeral });
+/* ------------------------------------------- */
+
+/* --------- Slash-command logic ------------- */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const { commandName: cmd } = interaction;
-  const isAdmin = interaction.memberPermissions.has(
-    PermissionFlagsBits.Administrator
-  );
+  const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 
   if (['adddomain', 'removedomain', 'listdomains'].includes(cmd) && !isAdmin) {
     log(`Denied ${cmd} for non-admin ${interaction.user.tag}`);
-    return interaction.reply({
-      content: '⛔ You need the **Administrator** permission to use this command.',
-      ephemeral: true,
-    });
+    return interaction.reply(eph('⛔ You need the **Administrator** permission to use this command.'));
   }
 
   try {
     if (cmd === 'adddomain') {
       const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
       if (monitoredDomains.includes(arg)) {
-        return interaction.reply({ content: `🔔 **${arg}** is already monitored.`, ephemeral: true });
+        return interaction.reply(eph(`🔔 **${arg}** is already monitored.`));
       }
       monitoredDomains.push(arg);
       saveDomains(monitoredDomains);
-      return interaction.reply({ content: `✅ Added **${arg}**`, ephemeral: true });
+      return interaction.reply(eph(`✅ Added **${arg}**`));
     }
 
     if (cmd === 'removedomain') {
       const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
       if (!monitoredDomains.includes(arg)) {
-        return interaction.reply({ content: `⚠️ **${arg}** wasn’t on the list.`, ephemeral: true });
+        return interaction.reply(eph(`⚠️ **${arg}** wasn’t on the list.`));
       }
       monitoredDomains = monitoredDomains.filter(d => d !== arg);
       saveDomains(monitoredDomains);
-      return interaction.reply({ content: `🗑️ Removed **${arg}**`, ephemeral: true });
+      return interaction.reply(eph(`🗑️ Removed **${arg}**`));
     }
 
     if (cmd === 'listdomains') {
       const list = monitoredDomains.length ? monitoredDomains.join(', ') : '_(none yet)_';
-      return interaction.reply({ content: `📋 **Monitored domains:** ${list}`, ephemeral: true });
+      return interaction.reply(eph(`📋 **Monitored domains:** ${list}`));
     }
 
     if (cmd === 'archive') {
       const raw = interaction.options.getString('url', true);
-      try { new URL(raw); } catch { return interaction.reply({ content: '❌ Invalid URL.', ephemeral: true }); }
+      try { new URL(raw); } catch { return interaction.reply(eph('❌ Invalid URL.')); }
       return interaction.reply({ content: `${PREFIX}${raw}` });
     }
   } catch (e) {
     err(`Error handling ${cmd}:`, e);
-    if (!interaction.replied) await interaction.reply({ content: '⚠️ An unexpected error occurred.', ephemeral: true });
+    if (!interaction.replied) await interaction.reply(eph('⚠️ An unexpected error occurred.'));
   }
 });
 /* ------------------------------------------- */
@@ -177,12 +168,8 @@ client.on('messageCreate', async message => {
   if (!urls) return;
 
   const matches = urls.filter(raw => {
-    try {
-      const host = new URL(raw).hostname.replace(/^www\./, '');
-      return monitoredDomains.includes(host);
-    } catch {
-      return false;
-    }
+    try { return monitoredDomains.includes(new URL(raw).hostname.replace(/^www\./, '')); }
+    catch { return false; }
   });
   if (matches.length === 0) return;
 
