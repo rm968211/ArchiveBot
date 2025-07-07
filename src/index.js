@@ -214,7 +214,7 @@ const slashCommands = [
     .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('archive')
-    .setDescription('Return the prefixed version of any URL (with a quip!)')
+    .setDescription('Return the prefixed version of any URL')
     .addStringOption(o => o.setName('url').setDescription('Full URL to archive').setRequired(true)),
 ].map(cmd => cmd.toJSON());
 /* ------------------------------------------- */
