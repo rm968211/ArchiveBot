@@ -1,4 +1,3 @@
-// index.js – Discord.js v14 | debug logger + flexible domain matching (www & case‑insensitive + sub‑domains)
 import {
   Client,
   GatewayIntentBits,
@@ -20,6 +19,60 @@ const err = (...args) => console.error(`[${new Date().toISOString()}]`, ...args)
 
 /* -------------- USER SETTINGS -------------- */
 const PREFIX = 'http://archive.ph/newest/';
+
+const QUIPS = [
+  '🚪🔑 Paywall? What paywall?',
+  '📰✨ Fresh off the archive presses:',
+  '📚 Saved for posterity:',
+  '💾 Cache me outside:',
+  '🎁 Unwrapped and ready:',
+  '🕵️‍♂️ Secret scoop secured:',
+  '📦 De-gated and delivered:',
+  '🔓 Doors wide open:',
+  '🪄 Voilà, no ads:',
+  '⏳ Froze that link in time:',
+  '🛰️ Downlinked from orbit:',
+  '🎩 Pulled from the paywall hat:',
+  '🛟 Rescued from oblivion:',
+  '📜 Scroll of truth incoming:',
+  '🚀 Launched past the firewall:',
+  '🥡 Take‑out copy, no login:',
+  '🌌 Archived in the cloud nebula:',
+  '🕰️ Time‑capsule unlocked:',
+  '🧊 Ice‑cold cache served:',
+  '🖨️ Printable and presentable:',
+  '🦉 Wisdom preserved:',
+  '🧢 No cap, just cache:',
+  '🍯 Honey, I shrank the paywall:',
+  '🍿 Snackable copy here:',
+  '🏛️ Shelved in the library of bots:',
+  '☎️ Operator, get me the archived edition:',
+  '🛸 Beamed up and back down:',
+  '🐉 Hoarded in the dragon’s archive:',
+  '🎬 Director’s cut, minus the ads:',
+  '🧮 Count on this cache:',
+  '📡 Signal acquired:',
+  '🦖 Fossilized link spotted:',
+  '🍕 Fresh slice of article:',
+  '🎓 Lesson unlocked:',
+  '⚡️ Quick‑charge article dump:',
+  '🧳 Packed for long‑term storage:',
+  '🪶 Feather‑light reading copy:',
+  '🌞 Sun‑dried subscription removed:',
+  '🌀 Whirled through the proxy:',
+  '🧩 Puzzle solved—here’s the piece:',
+  '🌊 Wave‑free surf:',
+  '🥷 Ninja‑saved content drop:',
+  '🌱 Evergreen edition:',
+  '🎱 Behind the eight‑ball? Not anymore:',
+  '🤖 Robot retrieved, human approved:',
+  '📀 Burned onto the infinite CD:',
+  '💃 Samba‑style open link:',
+  '🏄 Surf’s up on the archive wave:',
+  '⚙️ Gearshifted past paygate:',
+  '🧹 Swept the ads away:'
+];
+const randomQuip = () => QUIPS[Math.floor(Math.random() * QUIPS.length)];
 /* ------------------------------------------- */
 
 /* ---------- Domain storage in /data -------- */
@@ -113,7 +166,7 @@ const slashCommands = [
     .setDMPermission(false),
   new SlashCommandBuilder()
     .setName('archive')
-    .setDescription('Return the prefixed version of any URL')
+    .setDescription('Return the prefixed version of any URL (with a quip!)')
     .addStringOption(o => o.setName('url').setDescription('Full URL to archive').setRequired(true)),
 ].map(cmd => cmd.toJSON());
 /* ------------------------------------------- */
@@ -160,7 +213,7 @@ client.on('interactionCreate', async interaction => {
     if (cmd === 'archive') {
       const raw = interaction.options.getString('url', true);
       try { new URL(raw); } catch { return interaction.reply(eph('❌ Invalid URL.')); }
-      return interaction.reply({ content: `${PREFIX}${raw}` });
+      return interaction.reply({ content: `${randomQuip()}\n${PREFIX}${raw}` });
     }
   } catch (e) {
     err(`Error handling ${cmd}:`, e);
@@ -187,8 +240,9 @@ client.on('messageCreate', async message => {
 
   if (matches.length === 0) return;
 
-  const response = matches.map(u => `${PREFIX}${u}`).join('\n');
-  await message.channel.send({ content: response, reply: { messageReference: message.id } });
+  const links = matches.map(u => `${PREFIX}${u}`).join('\n');
+  const quip = randomQuip();
+  await message.channel.send({ content: `${quip}\n${links}`, reply: { messageReference: message.id } });
 });
 /* ------------------------------------------- */
 
