@@ -60,14 +60,18 @@ import {
     new SlashCommandBuilder()
       .setName('listdomains')
       .setDescription('Show all monitored domains'),
+    new SlashCommandBuilder()
+      .setName('archive')
+      .setDescription('Return the prefixed version of any URL')
+      .addStringOption(o =>
+        o.setName('url').setDescription('Full URL to archive').setRequired(true)
+      ),
   ].map(cmd => cmd.toJSON());
   /* ------------------------------------------ */
   
   client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
   
-    // Register slash commands globally (takes up to 1 hour);  
-    // for instant testing use Routes.applicationGuildCommands(client_id, guild_id)
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     await rest.put(Routes.applicationCommands(client.application.id), {
       body: slashCommands,
@@ -80,36 +84,47 @@ import {
     if (!interaction.isChatInputCommand()) return;
   
     const cmd = interaction.commandName;
-    const arg = interaction.options.getString('domain')?.replace(/^www\./, '');
   
     if (cmd === 'adddomain') {
-      if (monitoredDomains.includes(arg)) {
+      const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
+      if (monitoredDomains.includes(arg))
         return interaction.reply({ content: `🔔 **${arg}** is already monitored.`, ephemeral: true });
-      }
+  
       monitoredDomains.push(arg);
       saveDomains(monitoredDomains);
       return interaction.reply({ content: `✅ Added **${arg}**`, ephemeral: true });
     }
   
     if (cmd === 'removedomain') {
-      if (!monitoredDomains.includes(arg)) {
+      const arg = interaction.options.getString('domain', true).replace(/^www\./, '');
+      if (!monitoredDomains.includes(arg))
         return interaction.reply({ content: `⚠️ **${arg}** wasn’t on the list.`, ephemeral: true });
-      }
+  
       monitoredDomains = monitoredDomains.filter(d => d !== arg);
       saveDomains(monitoredDomains);
       return interaction.reply({ content: `🗑️ Removed **${arg}**`, ephemeral: true });
     }
   
     if (cmd === 'listdomains') {
-      const list = monitoredDomains.length
-        ? monitoredDomains.join(', ')
-        : '_(none yet)_';
+      const list = monitoredDomains.length ? monitoredDomains.join(', ') : '_(none yet)_';
       return interaction.reply({ content: `📋 **Monitored domains:** ${list}`, ephemeral: true });
+    }
+  
+    /* ---- /archive (always responds) ---- */
+    if (cmd === 'archive') {
+      const raw = interaction.options.getString('url', true);
+      try {
+        new URL(raw); // just to validate; throws if invalid
+      } catch {
+        return interaction.reply({ content: '❌ Invalid URL.', ephemeral: true });
+      }
+  
+      return interaction.reply({ content: `${PREFIX}${raw}` }); // public reply
     }
   });
   /* ----------------------------------------- */
   
-  /* ---------- Link-watching logic ----------- */
+  /* ---------- Automatic link watcher ------- */
   client.on('messageCreate', async message => {
     if (message.author.bot || !message.content) return;
   
