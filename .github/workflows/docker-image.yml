@@ -1,6 +1,8 @@
 name: Build and push image
 
 on:
+  schedule:
+    - cron: '0 0 1 * *'  # monthly, 1st of month midnight UTC
   push:
     tags:
       - 'v*.*.*'
